@@ -4,14 +4,12 @@
 use packed_simd::{f32x8};
 use std::ops::{Add, Mul, Sub, Deref, DerefMut, Index, IndexMut};
 
+/// calculate the number of `f32x8`'s needed to hold `n` f32s
 pub const fn simd(n: usize) -> usize {
     (n + 8 - 1) / 8
 }
 
-pub const fn add(a: usize, b: usize) -> usize {
-    a + b
-}
-
+/// Array of N `f32`s in SIMD layout (padded).
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct Vector<const N: usize>([f32x8; simd(N)])
@@ -52,26 +50,40 @@ vec_op!(Mul, mul);
 impl<const N: usize> Vector<N> where
     [u8; simd(N)]: Sized
 {
+    /// create a Vector full of zeros
     pub fn null() -> Self {
         Vector([f32x8::splat(0.0); simd(N)])
     }
+
+    /// return a new Vector with tanh of each value
     pub fn tanh(mut self) -> Self {
         self.0.iter_mut().for_each(|x| *x = x.tanh());
         self
     }
-    pub fn set(&mut self, idx: usize, val: f32) {
+
+    /// set the item at the given index to the given value
+    pub fn set(&mut self, idx: usize, value: f32) {
         assert!(idx < N);
-        self[idx] = val;
+        self[idx] = value;
     }
+
+    /// dot product with another Vector
     pub fn dot(&self, rhs: &Self) -> f32 {
         self.0.iter().zip(rhs.0.iter())
             .map(|(a, b)| *a * *b)
             .fold(f32x8::splat(0.0), f32x8::add)
             .sum()
     }
+
+    /// Fill the value from the given iterator
     pub fn fill(&mut self, values: impl Iterator<Item=f32>) {
         self.iter_mut().zip(values).for_each(|(o, i)| *o = i)
     }
+
+    /// Concatenate self with another vector
+    /// 
+    /// The resulting vector contains the values from `self`
+    /// in `0..N` and `rhs` in `N..N+M`
     pub fn concat<const M: usize>(&self, rhs: &Vector<M>) -> Vector<{N + M}>
     where [u8; simd(M)]: Sized, [u8; simd(N+M)]: Sized
     {
@@ -81,6 +93,11 @@ impl<const N: usize> Vector<N> where
         b.copy_from_slice(&**rhs);
         out
     }
+
+    /// Concatenate self with two other vectors
+    /// 
+    /// The resulting vector contains the values from `self`
+    /// in `0..N`, `rhs` in `N..N+M` and `other` in `N+M..N+M+O`
     pub fn concat2<const M: usize, const O: usize>(&self, rhs: &Vector<M>, other: &Vector<O>) -> Vector<{N + M + O}>
     where [u8; simd(M)]: Sized, [u8; simd(O)]: Sized, [u8; simd(N+M+O)]: Sized
     {
@@ -113,6 +130,7 @@ impl<const N: usize> DerefMut for Vector<N> where
     }
 }
 
+/// A Matrix of `N` columns and `M` rows, each row is padded.
 #[repr(transparent)]
 pub struct Matrix<const N: usize, const M: usize>([Vector<N>; M])
 where [u8; simd(N)]: Sized;
@@ -120,11 +138,14 @@ where [u8; simd(N)]: Sized;
 impl<const N: usize, const M: usize> Matrix<N, M>
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
 {
+    /// create a Box<Self> full of zeros
     pub fn null() -> Box<Self> {
         unsafe {
             Box::new_zeroed().assume_init()
         }
     }
+
+    /// Fill the matrix from the given iterator one row at a time
     pub fn fill(&mut self, mut values: impl Iterator<Item=f32>) {
         self.0.iter_mut().for_each(|v| v.fill(&mut values))
     }
@@ -159,6 +180,7 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
     }
 }
 
+/// Linear projection with bias
 #[repr(C)]
 pub struct Linear<const N: usize, const M: usize>
     where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
@@ -170,12 +192,14 @@ pub struct Linear<const N: usize, const M: usize>
 impl<const N: usize, const M: usize> Linear<N, M>
     where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
 {
+    /// create a `Box<Self>` full of zeros
     pub fn null() -> Box<Self> {
         unsafe {
             Box::new_zeroed().assume_init()
         }
     }
 
+    /// `x -> self.weight * x + self.bias`
     pub fn transform(&self, x: &Vector<N>) -> Vector<M> {
         &self.weight * x + self.bias
     }
