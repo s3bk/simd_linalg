@@ -12,8 +12,6 @@ use alloc::boxed::Box;
 #[cfg(feature="std")]
 extern crate std;
 
-#[cfg(feature="std")]
-use std::fmt;
 
 use core::mem::MaybeUninit;
 

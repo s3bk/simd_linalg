@@ -2,7 +2,8 @@ use core::ops::{
     AddAssign, Mul, SubAssign,
     Index, IndexMut
 };
-use crate::{simd, ZeroInit, Vector};
+use crate::{simd, simd_size, ZeroInit, Vector};
+use packed_simd::f32x8;
 
 #[cfg(feature="std")]
 use std::fmt;
@@ -46,6 +47,13 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
     }
     pub fn max_diff(&self, rhs: &Self) -> f32 {
         self.0.iter().zip(rhs.0.iter()).fold(0.0, |max, (a, b)| max.max(a.max_diff(b)))
+    }
+
+    pub fn buffer(&self) -> &[f32] {
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const f32, simd_size(N) * M) }
+    }
+    pub fn buffer_mut(&mut self) -> &mut [f32] {
+        unsafe { core::slice::from_raw_parts_mut(self as *mut Self as *mut f32, simd_size(N) * M) }
     }
 }
 

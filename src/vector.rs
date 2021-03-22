@@ -101,6 +101,14 @@ impl<const N: usize> Vector<N> where
     }
 
     /// dot product with another Vector
+    pub fn dot_fast(&self, rhs: &Self) -> f32 {
+        self.0.iter().zip(rhs.0.iter())
+            .map(|(a, b)| *a * *b)
+            .fold(f32x8::splat(0.0), f32x8::add)
+            .sum()
+    }
+
+    /// dot product with another Vector
     pub fn dot(&self, rhs: &Self) -> f32 {
         let mut sum = self.0.iter().take(N/8).zip(rhs.0.iter())
             .map(|(a, b)| *a * *b)
