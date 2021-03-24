@@ -24,4 +24,10 @@ fn test_matmul() {
     matmul_block(&a, &b, &mut d);
 
     assert!(c.max_diff(&d) < 1e-3);
+
+    matmul_matrixmultiply(&a, &b, &mut d);
+    assert!(c.max_diff(&d) < 1e-3);
+
+    matmul_blas(&a, &b, &mut d);
+    assert!(c.max_diff(&d) < 1e-3);
 }

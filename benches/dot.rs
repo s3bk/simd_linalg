@@ -6,8 +6,8 @@ extern crate test;
 use test::{Bencher, black_box};
 use simd_linalg::*;
 
-const K: usize = 100;
-const N: usize = 3;
+const K: usize = 10000;
+const N: usize = 7;
 
 #[bench]
 fn bench_dot7_vector(bencher: &mut Bencher) {

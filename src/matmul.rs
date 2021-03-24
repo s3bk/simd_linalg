@@ -41,6 +41,44 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
     }
 }
 
+#[cfg(feature="mm")]
+pub fn matmul_matrixmultiply<const N: usize, const M: usize, const O: usize>
+(a: &MatrixT<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
+{
+    unsafe {
+        // m=N, k=M, n=O
+        // a: m·k | N·M
+        // b: k·n | M·O
+        // c: m·n | N·O
+        matrixmultiply::sgemm(N, M, O, 1.0,
+            a as *const _ as _, simd_size(M) as isize, 1,
+            b as *const _ as _, 1, simd_size(M) as isize,
+            0.0,
+            c as *mut _ as _, 1, simd_size(N) as isize,
+        );
+    }
+}
+
+#[cfg(feature="blis")]
+pub fn matmul_blas<const M: usize, const N: usize, const K: usize>
+(a: &MatrixT<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
+{
+    extern crate blas_src;
+    use blas::*;
+    unsafe {
+        sgemm(b'T', b'N',
+            M as i32, N as i32, K as i32,
+            1.0, // alpha
+            a.buffer(), simd_size(K) as i32,
+            b.buffer(), simd_size(K) as i32,
+            0.0, // beta
+            c.buffer_mut(), simd_size(M) as i32,
+        );
+    }
+}
+
 /// N: width, M: height, S: stride in counts of f32x8
 pub struct Slice<const N: usize, const M: usize, const S: usize> {
     first: f32x8
