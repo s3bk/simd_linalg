@@ -25,9 +25,29 @@ fn test_matmul() {
 
     assert!(c.max_diff(&d) < 1e-3);
 
-    matmul_matrixmultiply(&a, &b, &mut d);
-    assert!(c.max_diff(&d) < 1e-3);
+    #[cfg(feature="mm")]
+    {
+        matmul_matrixmultiply(&a, &b, &mut d);
+        assert!(c.max_diff(&d) < 1e-3);
+    }
 
-    matmul_blas(&a, &b, &mut d);
-    assert!(c.max_diff(&d) < 1e-3);
+    #[cfg(feature="blis")]
+    {
+        matmul_blis(&a, &b, &mut d);
+        assert!(c.max_diff(&d) < 1e-3);
+    }
+
+    #[cfg(feature="mkl")]
+    {
+        matmul_mkl(&a, &b, &mut d);
+        assert!(c.max_diff(&d) < 1e-3);
+    }
+
+    #[cfg(feature="mkl_jit")]
+    {
+        if let Some(f) = matmul_mkl_jit() {
+            f(&a, &b, &mut d);
+            assert!(c.max_diff(&d) < 1e-3);
+        }
+    }
 }

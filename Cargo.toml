@@ -7,9 +7,11 @@ edition = "2018"
 [features]
 alloc = []
 std = ["alloc"]
-default = ["std", "mm", "blis"]
+default = ["std", "mm"]
 mm = ["matrixmultiply"]
 blis = ["blas", "blas-src"]
+mkl = []
+mkl_jit = ["mkl"]
 
 [dependencies]
 packed_simd = { version = "*", package = "packed_simd_2" }

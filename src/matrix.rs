@@ -20,6 +20,13 @@ pub type MatrixT<const N: usize, const M: usize> = Matrix<M, N>;
 impl<const N: usize, const M: usize> Matrix<N, M>
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
 {
+    pub fn copy_transposed(&self, out: &mut Matrix<M, N>) {
+        for n in 0 .. N {
+            for m in 0 .. M {
+                out[m][n] = self[n][m];
+            }
+        }
+    }
     // stride in bytes
     pub const fn stride() -> usize {
         core::mem::size_of::<Vector<N>>()

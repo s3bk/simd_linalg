@@ -1,5 +1,6 @@
 #![feature(const_generics, const_evaluatable_checked)]
 #![cfg_attr(feature="alloc", feature(new_uninit))]
+#![cfg_attr(feature="mkl_jit", feature(once_cell))]
 #![allow(incomplete_features)]
 #![no_std]
 
@@ -12,7 +13,16 @@ use alloc::boxed::Box;
 #[cfg(feature="std")]
 extern crate std;
 
+#[cfg(feature="mkl")]
+#[allow(dead_code, non_camel_case_types, non_upper_case_globals, improper_ctypes, non_snake_case)]
+mod mkl;
 
+#[cfg(feature="mkl")]
+pub fn mkl_init() {
+    unsafe {
+        mkl::MKL_Set_Threading_Layer(mkl::MKL_THREADING_SEQUENTIAL as _);
+    }
+}
 use core::mem::MaybeUninit;
 
 /// Marker trait for types that can be initialized with zeros.
