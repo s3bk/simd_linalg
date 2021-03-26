@@ -197,6 +197,7 @@ impl<const N: usize> Deref for Vector<N> where
     [u8; simd(N)]: Sized
 {
     type Target = [f32; N];
+    #[inline(always)]
     fn deref(&self) -> &[f32; N] {
         unsafe {
             &*(self as *const _ as *const [f32; N])
@@ -206,6 +207,7 @@ impl<const N: usize> Deref for Vector<N> where
 impl<const N: usize> DerefMut for Vector<N> where
     [u8; simd(N)]: Sized
 {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut [f32; N] {
         unsafe {
             &mut *(self as *mut _ as *mut [f32; N])

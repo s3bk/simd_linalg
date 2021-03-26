@@ -1,7 +1,9 @@
 use crate::{Matrix, MatrixT, Vector, simd, simd_size, zero};
 use packed_simd::f32x8;
+use unroll::unroll_for_loops;
+use itertools::{Itertools, iproduct};
 
-pub fn matmul_naive<const N: usize, const M: usize, const O: usize>
+pub fn matmul_naive_t<const N: usize, const M: usize, const O: usize>
     (a: &MatrixT<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
 {
@@ -12,7 +14,7 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
     }
 }
 
-pub fn matmul_block<const N: usize, const M: usize, const O: usize>
+pub fn matmul_block_t<const N: usize, const M: usize, const O: usize>
     (a: &MatrixT<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
 {
@@ -41,82 +43,153 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
     }
 }
 
-pub fn matmul_block_t<const N: usize, const M: usize, const O: usize>
-    (a: &Matrix<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
-where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
-{
-    const B: usize = 8;
-    
-    for block_n in 0 .. (N+B-1)/B {
-        for block_o in 0 .. O/4 {
-            let off_o = 4 * block_o;
-            let mut acc0 = f32x8::splat(0.0);
-            let mut acc1 = f32x8::splat(0.0);
-            let mut acc2 = f32x8::splat(0.0);
-            let mut acc3 = f32x8::splat(0.0);
-            let mut acc4 = f32x8::splat(0.0);
-            let mut acc5 = f32x8::splat(0.0);
-            let mut acc6 = f32x8::splat(0.0);
-            let mut acc7 = f32x8::splat(0.0);
+const fn div_ceil8(a: usize) -> usize {
+    a.saturating_add(7) >> 3
+}
+const fn div_floor4(a: usize) -> usize {
+    a >> 2
+}
+const fn div_floor2(a: usize) -> usize {
+    a >> 1
+}
+const fn mod2(a: usize) -> usize {
+    a & 1
+}
 
-            for m in 0 .. (M+1)/2 {
-                let m1 = 2*m;
-                let a_block = a[m1].0[block_n];
-                acc0 += a_block * f32x8::splat(b[off_o+0][m1]);
-                acc1 += a_block * f32x8::splat(b[off_o+1][m1]);
-                acc2 += a_block * f32x8::splat(b[off_o+2][m1]);
-                acc3 += a_block * f32x8::splat(b[off_o+3][m1]);
-                
-                let m2 = m1 + 1;
-                if m2 < M {
-                    let a_block = a[m2].0[block_n];
-                    acc4 += a_block * f32x8::splat(b[off_o+0][m2]);
-                    acc5 += a_block * f32x8::splat(b[off_o+1][m2]);
-                    acc6 += a_block * f32x8::splat(b[off_o+2][m2]);
-                    acc7 += a_block * f32x8::splat(b[off_o+3][m2]);
-                }
-            }
-            c[off_o+0].0[block_n] = acc0 + acc4;
-            c[off_o+1].0[block_n] = acc1 + acc5;
-            c[off_o+2].0[block_n] = acc2 + acc6;
-            c[off_o+3].0[block_n] = acc3 + acc7;
+fn prefetch_l0<T>(t: &T) {
+    use core::arch::x86_64::*;
+    unsafe {
+        core::arch::x86_64::_mm_prefetch(t as *const T as *const i8, _MM_HINT_T0);
+    }
+}
+
+fn prefetch_l1<T>(t: &T) {
+    use core::arch::x86_64::*;
+    unsafe {
+        core::arch::x86_64::_mm_prefetch(t as *const T as *const i8, _MM_HINT_T1);
+    }
+}
+
+fn prefetch_l2<T>(t: &T) {
+    use core::arch::x86_64::*;
+    unsafe {
+        core::arch::x86_64::_mm_prefetch(t as *const T as *const i8, _MM_HINT_T2);
+    }
+}
+
+pub fn matmul_block<const N: usize, const M: usize, const K: usize>
+    (a: &Matrix<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
+{
+    const B_N: usize = 4; // fixed
+    const B_M: usize = 8; // fixed
+    const G_N: usize = 256;
+    const G_M: usize = 256;
+    const G_K: usize = 64;
+
+    for n in 0 .. N {
+        for m in 0 .. M/8 {
+            c.0[n].0[m] = f32x8::splat(0.0);
         }
     }
-    if O % 4 > 0 {
-        let off_o = 4*(O/4);
-        for block_n in 0 .. (N+B-1)/B {
-            let mut acc0 = f32x8::splat(0.0);
-            let mut acc1 = f32x8::splat(0.0);
-            let mut acc2 = f32x8::splat(0.0);
 
-            for m in 0 .. M {
-                let a_block = a[m].0[block_n];
+    let iter = iproduct!(0 .. M/G_M, 0 .. N/G_N, 0 .. K/G_K, 0 .. G_N/B_N, 0 .. G_M/B_M);
 
-                if O%4 > 0 {
-                    acc0 += a_block * f32x8::splat(b[off_o+0][m]);
-                }
-                if O%4 > 1 {
-                    acc1 += a_block * f32x8::splat(b[off_o+1][m]);
-                }
-                if O%4 > 2 {
-                    acc2 += a_block * f32x8::splat(b[off_o+2][m]);
-                }
-            }
-            if O%4 > 0 {
-                c[off_o+0].0[block_n] = acc0;
-            }
-            if O%4 > 1 {
-                c[off_o+1].0[block_n] = acc1;
-            }
-            if O%4 > 2 {
-                c[off_o+2].0[block_n] = acc2;
-            }
+    for (group_m, group_n, group_k, block_n, block_m) in iter {
+        let idx_m = group_m * (G_M/B_M) + block_m;
+        let off_n = group_n * G_N + block_n * B_N;
+        let off_k = group_k * G_K;
+
+        let a_block = a[off_k].0[idx_m];
+        let mut acc0 = a_block * f32x8::splat(b[off_n+0][off_k]);
+        let mut acc1 = a_block * f32x8::splat(b[off_n+1][off_k]);
+        let mut acc2 = a_block * f32x8::splat(b[off_n+2][off_k]);
+        let mut acc3 = a_block * f32x8::splat(b[off_n+3][off_k]);
+        let mut acc4 = a_block * f32x8::splat(b[off_n+0][off_k+1]);
+        let mut acc5 = a_block * f32x8::splat(b[off_n+1][off_k+1]);
+        let mut acc6 = a_block * f32x8::splat(b[off_n+2][off_k+1]);
+        let mut acc7 = a_block * f32x8::splat(b[off_n+3][off_k+1]);
+
+        for d_k in 1 .. G_K/2 {
+            let k = off_k+2*d_k;
+            let a_block = a[k].0[idx_m];
+            acc0 = a_block.mul_add(f32x8::splat(b[off_n+0][k]), acc0);
+            acc1 = a_block.mul_add(f32x8::splat(b[off_n+1][k]), acc1);
+            acc2 = a_block.mul_add(f32x8::splat(b[off_n+2][k]), acc2);
+            acc3 = a_block.mul_add(f32x8::splat(b[off_n+3][k]), acc3);
+            acc4 = a_block.mul_add(f32x8::splat(b[off_n+0][k+1]), acc4);
+            acc5 = a_block.mul_add(f32x8::splat(b[off_n+1][k+1]), acc5);
+            acc6 = a_block.mul_add(f32x8::splat(b[off_n+1][k+1]), acc6);
+            acc7 = a_block.mul_add(f32x8::splat(b[off_n+2][k+1]), acc7);
         }
+
+        c[off_n+0].0[idx_m] += acc0 + acc4;
+        c[off_n+1].0[idx_m] += acc1 + acc5;
+        c[off_n+2].0[idx_m] += acc2 + acc6;
+        c[off_n+3].0[idx_m] += acc3 + acc7;
+    }
+}
+
+#[unroll_for_loops]
+pub fn matmul_block_4_6_8(a: &Matrix<4, 6>, b: &Matrix<6, 8>, c: &mut Matrix<4, 8>) 
+{
+    for o in 0 .. 2 {
+        let off_o = 4 * o;
+
+        let a_block = a[0].0[0];
+        let mut acc0 = a_block * f32x8::splat(b[off_o+0][0]);
+        let mut acc1 = a_block * f32x8::splat(b[off_o+1][0]);
+        let mut acc2 = a_block * f32x8::splat(b[off_o+2][0]);
+        let mut acc3 = a_block * f32x8::splat(b[off_o+3][0]);
+        let mut acc4 = a_block * f32x8::splat(b[off_o+0][1]);
+        let mut acc5 = a_block * f32x8::splat(b[off_o+1][1]);
+        let mut acc6 = a_block * f32x8::splat(b[off_o+2][1]);
+        let mut acc7 = a_block * f32x8::splat(b[off_o+3][1]);
+
+        for m in 1 .. 3 {
+            let m1 = 2*m;
+            let a_block = a[m1].0[0];
+            acc0 = a_block.mul_add(f32x8::splat(b[off_o+0][m1]), acc0);
+            acc1 = a_block.mul_add(f32x8::splat(b[off_o+1][m1]), acc1);
+            acc2 = a_block.mul_add(f32x8::splat(b[off_o+2][m1]), acc2);
+            acc3 = a_block.mul_add(f32x8::splat(b[off_o+3][m1]), acc3);
+            
+            let m2 = m1 + 1;
+            let a_block = a[m2].0[0];
+            acc4 = a_block.mul_add(f32x8::splat(b[off_o+0][m2]), acc4);
+            acc5 = a_block.mul_add(f32x8::splat(b[off_o+1][m2]), acc5);
+            acc6 = a_block.mul_add(f32x8::splat(b[off_o+2][m2]), acc6);
+            acc7 = a_block.mul_add(f32x8::splat(b[off_o+3][m2]), acc7);
+        }
+
+        c[off_o+0].0[0] = acc0 + acc4;
+        c[off_o+1].0[0] = acc1 + acc5;
+        c[off_o+2].0[0] = acc2 + acc6;
+        c[off_o+3].0[0] = acc3 + acc7;
     }
 }
 
 #[cfg(feature="mm")]
 pub fn matmul_matrixmultiply<const N: usize, const M: usize, const O: usize>
+(a: &Matrix<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
+{
+    unsafe {
+        // m=N, k=M, n=O
+        // a: m·k | N·M
+        // b: k·n | M·O
+        // c: m·n | N·O
+        matrixmultiply::sgemm(N, M, O, 1.0,
+            a as *const _ as _, 1, simd_size(N) as isize,
+            b as *const _ as _, 1, simd_size(M) as isize,
+            0.0,
+            c as *mut _ as _, 1, simd_size(N) as isize,
+        );
+    }
+}
+
+#[cfg(feature="mm")]
+pub fn matmul_matrixmultiply_t<const N: usize, const M: usize, const O: usize>
 (a: &MatrixT<N, M>, b: &Matrix<M, O>, c: &mut Matrix<N, O>) 
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
 {
@@ -135,7 +208,7 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(O)]: Sized
 }
 
 #[cfg(feature="blis")]
-pub fn matmul_blis<const M: usize, const N: usize, const K: usize>
+pub fn matmul_blis_t<const M: usize, const N: usize, const K: usize>
 (a: &MatrixT<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {
@@ -152,9 +225,53 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
         );
     }
 }
+#[cfg(feature="blis")]
+pub fn matmul_blis<const M: usize, const N: usize, const K: usize>
+(a: &Matrix<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
+{
+    extern crate blas_src;
+    use blas::*;
+    unsafe {
+        sgemm(b'N', b'N',
+            M as i32, N as i32, K as i32,
+            1.0, // alpha
+            a.buffer(), simd_size(M) as i32,
+            b.buffer(), simd_size(K) as i32,
+            0.0, // beta
+            c.buffer_mut(), simd_size(M) as i32,
+        );
+    }
+}
 
 #[cfg(feature="mkl")]
 pub fn matmul_mkl<const M: usize, const N: usize, const K: usize>
+(a: &Matrix<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
+where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
+{
+    use crate::mkl::*;
+
+    let lda = simd_size(M) as _;
+    let ldb = simd_size(K) as _;
+    let ldc = simd_size(M) as _;
+    let alpha = 1.0;
+    let beta = 0.0;
+    
+    unsafe {
+        sgemm_direct(&(b'N' as i8), &(b'N' as i8),
+            &(M as _), &(N as _), &(K as _),
+            &alpha,
+            a.buffer().as_ptr(), &lda,
+            b.buffer().as_ptr(), &ldb,
+            &beta,
+            c.buffer_mut().as_mut_ptr(), &ldc,
+            &1
+        );
+    }
+}
+
+#[cfg(feature="mkl")]
+pub fn matmul_mkl_t<const M: usize, const N: usize, const K: usize>
 (a: &MatrixT<M, K>, b: &Matrix<K, N>, c: &mut Matrix<M, N>) 
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {
@@ -178,7 +295,6 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
         );
     }
 }
-
 
 #[cfg(feature="mkl_jit")]
 mod jit {
@@ -234,12 +350,10 @@ mod jit {
             }
         }
         pub unsafe fn exec(&self, a: &[f32], b: &[f32], c: &mut [f32]) {
-            (self.f)
-            (self.jit,
-                a.as_ptr() as *mut f32,
-                b.as_ptr() as *mut f32,
-                c.as_mut_ptr()
-            );
+            let a = a.as_ptr() as *mut f32;
+            let b = b.as_ptr() as *mut f32;
+            let c = c.as_mut_ptr();
+            (self.f)(self.jit, a, b, c);
         }
     }
     impl Drop for Kernel {
@@ -254,7 +368,7 @@ mod jit {
 }
 
 #[cfg(feature="mkl_jit")]
-pub fn matmul_mkl_jit<const M: usize, const N: usize, const K: usize>
+pub fn matmul_mkl_jit_t<const M: usize, const N: usize, const K: usize>
 () -> Option<impl Fn(&MatrixT<M, K>, &Matrix<K, N>, &mut Matrix<M, N>)>
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {
@@ -277,7 +391,7 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 }
 
 #[cfg(feature="mkl_jit")]
-pub fn matmul_mkl_jit_t<const M: usize, const N: usize, const K: usize>
+pub fn matmul_mkl_jit<const M: usize, const N: usize, const K: usize>
 () -> Option<impl Fn(&Matrix<M, K>, &Matrix<K, N>, &mut Matrix<M, N>)>
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {

@@ -17,10 +17,19 @@ extern crate std;
 #[allow(dead_code, non_camel_case_types, non_upper_case_globals, improper_ctypes, non_snake_case)]
 mod mkl;
 
+#[cfg(feature="blis")]
+mod blis;
+
 #[cfg(feature="mkl")]
 pub fn mkl_init() {
     unsafe {
         mkl::MKL_Set_Threading_Layer(mkl::MKL_THREADING_SEQUENTIAL as _);
+    }
+}
+#[cfg(feature="blis")]
+pub fn blis_init() {
+    unsafe {
+        blis::bli_thread_set_num_threads(1);
     }
 }
 use core::mem::MaybeUninit;
