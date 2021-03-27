@@ -5,8 +5,8 @@ use simd_linalg::*;
 
 #[test]
 fn test_matmul() {
-    const N: usize = 128;
-    const M: usize = 256;
+    const N: usize = 3*32;
+    const M: usize = 3*32;
     const O: usize = 64;
     let rng = rand::thread_rng();
     let mut iter = Standard.sample_iter(rng);

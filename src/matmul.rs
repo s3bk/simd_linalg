@@ -92,7 +92,7 @@ pub fn matmul_block<const N: usize, const M: usize, const K: usize>
 where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {
     const B_N: usize = 3; // fixed
-    const B_M: usize = 8; // fixed
+    const B_M: usize = 3*8; // fixed
     const G_N: usize = 64;
     const G_M: usize = 64;
     const G_K: usize = 3 * 32;
@@ -113,52 +113,60 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 
     for (group_m, group_n, group_k, block_n, block_m) in iter {
         let idx_m = group_m * (g_m/B_M) + block_m;
-        let off_n = group_n * g_n + block_n * B_N;
+        let off_n = group_n * (g_n/B_M) + block_n;
         let off_k = group_k * g_k;
 
-        let a_block = a[off_k].0[idx_m];
-        let mut acc0 = a_block * f32x8::splat(b[off_n+0][off_k]);
-        let mut acc1 = a_block * f32x8::splat(b[off_n+1][off_k]);
-        let mut acc2 = a_block * f32x8::splat(b[off_n+2][off_k]);
-        let mut acc3 = a_block * f32x8::splat(b[off_n+0][off_k+1]);
-        let mut acc4 = a_block * f32x8::splat(b[off_n+1][off_k+1]);
-        let mut acc5 = a_block * f32x8::splat(b[off_n+2][off_k+1]);
-        let mut acc6 = a_block * f32x8::splat(b[off_n+0][off_k+2]);
-        let mut acc7 = a_block * f32x8::splat(b[off_n+1][off_k+2]);
-        let mut acc8 = a_block * f32x8::splat(b[off_n+2][off_k+2]);
+        let a_0 = a[off_k].0[idx_m+0];
+        let a_1 = a[off_k].0[idx_m+1];
+        let a_2 = a[off_k].0[idx_m+2];
 
-        for d_k in 1 .. g_k/3 {
-            let k = off_k+3*d_k;
-            let a_block = a[k].0[idx_m];
-            acc0 = a_block.mul_add(f32x8::splat(b[off_n+0][k]), acc0);
-            acc1 = a_block.mul_add(f32x8::splat(b[off_n+1][k]), acc1);
-            acc2 = a_block.mul_add(f32x8::splat(b[off_n+2][k]), acc2);
-            acc3 = a_block.mul_add(f32x8::splat(b[off_n+0][k+1]), acc3);
-            acc4 = a_block.mul_add(f32x8::splat(b[off_n+1][k+1]), acc4);
-            acc5 = a_block.mul_add(f32x8::splat(b[off_n+2][k+1]), acc5);
-            acc6 = a_block.mul_add(f32x8::splat(b[off_n+0][k+2]), acc6);
-            acc7 = a_block.mul_add(f32x8::splat(b[off_n+1][k+2]), acc7);
-            acc8 = a_block.mul_add(f32x8::splat(b[off_n+2][k+2]), acc8);
+        let b_0 = f32x8::splat(b[off_n+0][off_k]);
+        let mut c_0_0 = a_0 * b_0;
+        let mut c_1_0 = a_1 * b_0;
+        let mut c_2_0 = a_2 * b_0;
+
+        let b_1 = f32x8::splat(b[off_n+1][off_k]);
+        let mut c_0_1 = a_0 * b_1;
+        let mut c_1_1 = a_1 * b_1;
+        let mut c_2_1 = a_2 * b_1;
+
+        let b_2 = f32x8::splat(b[off_n+2][off_k]);
+        let mut c_0_2 = a_0 * b_2;
+        let mut c_1_2 = a_1 * b_2;
+        let mut c_2_2 = a_2 * b_2;
+
+        for idx_k in 1 .. g_k {
+            let k = off_k+idx_k;
+
+            let a_0 = a[k].0[idx_m+0];
+            let a_1 = a[k].0[idx_m+1];
+            let a_2 = a[k].0[idx_m+2];
+
+            let b_0 = f32x8::splat(b[off_n+0][k]);
+            c_0_0 = a_0.mul_add(b_0, c_0_0);
+            c_1_0 = a_1.mul_add(b_0, c_1_0);
+            c_2_0 = a_2.mul_add(b_0, c_2_0);
+
+            let b_1 = f32x8::splat(b[off_n+1][k]);
+            c_0_1 = a_0.mul_add(b_1, c_0_1);
+            c_1_1 = a_1.mul_add(b_1, c_1_1);
+            c_2_1 = a_2.mul_add(b_1, c_2_1);
+
+            let b_2 = f32x8::splat(b[off_n+2][k]);
+            c_0_2 = a_0.mul_add(b_2, c_0_2);
+            c_1_2 = a_1.mul_add(b_2, c_1_2);
+            c_2_2 = a_2.mul_add(b_2, c_2_2);
         }
 
-        let idx_k = 3*(g_k/3);
-        if idx_k + 1 < g_k {
-            let k = off_k + idx_k;
-            let a_block = a[k].0[idx_m];
-            acc0 = a_block.mul_add(f32x8::splat(b[off_n+0][k]), acc0);
-            acc1 = a_block.mul_add(f32x8::splat(b[off_n+1][k]), acc1);
-            acc2 = a_block.mul_add(f32x8::splat(b[off_n+2][k]), acc2);
-
-            if idx_k + 2 < g_k {
-                acc3 = a_block.mul_add(f32x8::splat(b[off_n+0][k+1]), acc3);
-                acc4 = a_block.mul_add(f32x8::splat(b[off_n+1][k+1]), acc4);
-                acc5 = a_block.mul_add(f32x8::splat(b[off_n+2][k+1]), acc5);
-            }
-        }
-
-        c[off_n+0].0[idx_m] += acc0 + acc3 + acc6;
-        c[off_n+1].0[idx_m] += acc1 + acc4 + acc7;
-        c[off_n+2].0[idx_m] += acc2 + acc5 + acc8;
+        c[off_n+0].0[idx_m+0] += c_0_0;
+        c[off_n+0].0[idx_m+1] += c_1_0;
+        c[off_n+0].0[idx_m+2] += c_2_0;
+        c[off_n+1].0[idx_m+0] += c_0_1;
+        c[off_n+1].0[idx_m+1] += c_1_1;
+        c[off_n+1].0[idx_m+2] += c_2_1;
+        c[off_n+2].0[idx_m+0] += c_0_2;
+        c[off_n+2].0[idx_m+1] += c_1_2;
+        c[off_n+2].0[idx_m+2] += c_2_2;
     }
 }
 
