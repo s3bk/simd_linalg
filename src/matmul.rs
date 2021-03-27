@@ -93,13 +93,13 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized, [u8; simd(K)]: Sized
 {
     const B_N: usize = 3; // fixed
     const B_M: usize = 3*8; // fixed
-    const G_N: usize = 64;
-    const G_M: usize = 64;
-    const G_K: usize = 3 * 32;
+    const G_N: usize = 16 * B_N;
+    const G_M: usize = 16 * B_M;
+    const G_K: usize = 128;
 
-    let g_m = split(G_M, M);
-    let g_n = split(G_N, N);
-    let g_k = split(G_K, K);
+    let g_m = split(M, G_M);
+    let g_n = split(N, G_N);
+    let g_k = split(K, G_K);
 
     if g_k < K {
         for n in 0 .. N {
