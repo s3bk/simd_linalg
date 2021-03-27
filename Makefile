@@ -1,4 +1,5 @@
-.PHONY: src/mkl.rs
+all: src/mkl.rs src/blis.rs
+
 src/mkl.rs:
 	bindgen ---rust-target nightly --size_t-is-usize \
 	--whitelist-function mkl_cblas_jit_create_sgemm \
@@ -9,3 +10,9 @@ src/mkl.rs:
 	--whitelist-var MKL_THREADING_SEQUENTIAL \
 	/opt/intel/compilers_and_libraries_2020.4.304/linux/mkl/include/mkl.h \
 	-- -D MKL_ILP64 -D MKL_DIRECT_CALL_SEQ > src/mkl.rs
+
+src/blis.rs:
+	bindgen ---rust-target nightly --size_t-is-usize \
+	--whitelist-function bli_thread_set_num_threads \
+	/home/sebk/src/blis/include/haswell/blis.h \
+ 	> src/blis.rs
