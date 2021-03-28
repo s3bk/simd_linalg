@@ -17,5 +17,5 @@ fn main() {
     println!("c at {:p} {} {}", c.as_ref(), simd_size(M), N);
 
     #[cfg(feature="mkl")]
-    matmul_mkl(&a, &b, &mut c);
+    mkl::matmul(&a, &b, &mut c);
 }

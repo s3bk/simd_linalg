@@ -23,7 +23,7 @@ fn bench_matmul_block(bencher: &mut Bencher) {
     let a = zero_box::<Matrix<N, M>>();
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
-    bencher.iter(|| matmul_block(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| block::matmul(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[bench]
@@ -31,14 +31,14 @@ fn bench_matmul_block_t(bencher: &mut Bencher) {
     let a = zero_box::<Matrix<M, N>>();
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
-    bencher.iter(|| matmul_block_t(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| block::matmul_t(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 #[bench]
 fn bench_matmul_block_4_6_8(bencher: &mut Bencher) {
     let a = zero_box::<Matrix<4, 6>>();
     let b = zero_box::<Matrix<6, 8>>();
     let mut c = zero_box::<Matrix<4, 8>>();
-    bencher.iter(|| matmul_block_4_6_8(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| block::matmul_4_6_8(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="mm")]
@@ -48,7 +48,7 @@ fn bench_matmul_matrixmultiply(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_matrixmultiply(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| matrixmultiply::matmul(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="mm")]
@@ -58,7 +58,7 @@ fn bench_matmul_matrixmultiply_t(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_matrixmultiply_t(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| matrixmultiply::matmul_t(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="blis")]
@@ -70,7 +70,7 @@ fn bench_matmul_blis_t(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_blis_t(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| blis::matmul_t(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 #[cfg(feature="blis")]
 #[bench]
@@ -81,7 +81,7 @@ fn bench_matmul_blis(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_blis(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| blis::matmul(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="mkl")]
@@ -93,7 +93,7 @@ fn bench_matmul_mkl(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_mkl(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| mkl::matmul(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="mkl")]
@@ -105,7 +105,7 @@ fn bench_matmul_mkl_t(bencher: &mut Bencher) {
     let b = zero_box::<Matrix<M, O>>();
     let mut c = zero_box::<Matrix<N, O>>();
 
-    bencher.iter(|| matmul_mkl_t(black_box(&a), black_box(&b), black_box(&mut c)));
+    bencher.iter(|| mkl::matmul_t(black_box(&a), black_box(&b), black_box(&mut c)));
 }
 
 #[cfg(feature="mkl_jit")]
@@ -113,7 +113,7 @@ fn bench_matmul_mkl_t(bencher: &mut Bencher) {
 fn bench_matmul_mkl_jit(bencher: &mut Bencher) {
     mkl_init();
 
-    if let Some(f) = matmul_mkl_jit() {
+    if let Some(f) = mkl::matmul_jit() {
         let a = zero_box::<Matrix<N, M>>();
         let b = zero_box::<Matrix<M, O>>();
         let mut c = zero_box::<Matrix<N, O>>();
@@ -127,7 +127,7 @@ fn bench_matmul_mkl_jit(bencher: &mut Bencher) {
 fn bench_matmul_mkl_jit_t(bencher: &mut Bencher) {
     mkl_init();
 
-    if let Some(f) = matmul_mkl_jit_t() {
+    if let Some(f) = mkl::matmul_jit_t() {
         let a = zero_box::<Matrix<M, N>>();
         let b = zero_box::<Matrix<M, O>>();
         let mut c = zero_box::<Matrix<N, O>>();

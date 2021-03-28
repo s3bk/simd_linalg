@@ -37,6 +37,12 @@ where [u8; simd(N)]: Sized, [u8; simd(M)]: Sized
         self.0.iter_mut().for_each(|v| v.fill(&mut values))
     }
 
+    pub fn fill_val(&mut self, val: f32) {
+        for row in self.0.iter_mut() {
+            row.fill_val(val);
+        }
+    }
+
     pub fn argmax1(&self, vector: &Vector<N>) -> (Vector<M>, [usize; M]) {
         let mut out_v = Vector::null();
         let mut out_i = [0; M];

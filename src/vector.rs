@@ -142,7 +142,10 @@ impl<const N: usize> Vector<N> where
         self.0.iter().fold(f32x8::splat(0.0), |max, s| max.max(s.abs())).max_element()
     }
     pub fn max_diff(&self, rhs: &Self) -> f32 {
-        self.0.iter().zip(rhs.0.iter()).fold(f32x8::splat(0.0), |max, (&a, &b)| max.max((a - b).abs())).max_element()
+        self.0.iter().zip(rhs.0.iter()).take(N-1)
+            .fold(f32x8::splat(0.0), |max, (&a, &b)| max.max((a - b).abs()))
+            .max(Self::mask().select(self.0[simd(N)-1] - rhs.0[simd(N)-1], f32x8::splat(0.0)).abs())
+            .max_element()
     }
     /// create a Vector with every element set to the given value
     pub fn splat(value: f32) -> Self {
@@ -154,6 +157,11 @@ impl<const N: usize> Vector<N> where
     /// Fill the value from the given iterator
     pub fn fill(&mut self, values: impl Iterator<Item=f32>) {
         self.iter_mut().zip(values).for_each(|(o, i)| *o = i)
+    }
+    pub fn fill_val(&mut self, val: f32) {
+        for slice in self.0.iter_mut() {
+            *slice = f32x8::splat(val);
+        }
     }
 
     /// Concatenate self with another vector
